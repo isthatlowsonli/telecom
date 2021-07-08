@@ -1,0 +1,192 @@
+---
+title: "Append Additional Variables"
+author: "Lowson Li"
+date: "`r format(Sys.time(),'%B %d, %Y')`"
+output:
+  html_notebook:
+    code_folding: show
+    highlight: tango
+    number_sections: yes
+    theme: simplex
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+  html_document:
+    df_print: paged
+    toc: yes
+  pdf_document:
+    toc: yes
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+# User variables
+
+## Load library
+
+```{r}
+library(tidyverse)
+library(readr)
+library(data.table)
+library(rio)
+```
+
+## Import additional user data
+
+```{r}
+# inspect the number of files of orginal user data
+n_files_var <- list.files(
+  path = "~/telecom/telecom_data/TB_ASZ_CDMA",
+  pattern = ".*out.csv",
+  full.names = TRUE
+)[-12]
+
+n_files_var
+```
+
+```{r}
+# import all the files in the list 
+tbl_fread_var <-
+  n_files_var %>%
+  map_df(~ fread(
+    .,
+    header = TRUE,
+    select = c(
+      "MONTH_NO",
+      "SERV_ID",
+      "MSISDN",
+      "PD_EVDO_FLAG_M1",
+      "MB_ARPU_CDMA_M1",
+      "PL_INVAMON_MAX",
+      "HS_CDMA_IS_EVDO",
+      "VO_CDMA_COUNTOUT_M1",
+      "VO_CDMA_COUNTIN_M1",
+      "VO_CDMA_MOUOUT_M1",
+      "VO_CDMA_MOUIN_M1",
+      "VO_NET_VOL_M1",
+      "VO_NET_TIME_M1"
+    ),
+    verbose = FALSE
+  ))
+```
+
+```{r}
+# users by month
+tbl_fread_var %>% 
+  group_by(MONTH_NO) %>% 
+  summarise(count = n_distinct(SERV_ID,MSISDN))
+```
+
+## Append data
+
+### Balanced Panel
+
+```{r echo=TRUE}
+# import user_var_b.csv
+user_var_b <-
+  fread(
+    file = "~/telecom/Output/user_var_b.csv",
+    header = TRUE,
+    verbose = FALSE
+  )
+
+user_var_b_add <-
+  user_var_b %>%
+  left_join(tbl_fread_var, by = c("MONTH_NO", "SERV_ID", "MSISDN"))
+```
+
+```{r echo=TRUE}
+# trim redundant space
+# mysql use "\N" as NA, replace "\N" with NA
+# some columns have empty sting, replace with NA
+user_var_b_add <-
+  user_var_b_add %>%
+  mutate(across(.cols = everything(), .fns = ~ str_trim(., side = "both"))) %>%
+  mutate(across(.cols = everything(), .fns = ~ na_if(., "\\N"))) %>%
+  mutate(across(.cols = everything(), .fns = ~ na_if(., "")))
+```
+
+### Unbalanced Panel
+
+```{r echo=TRUE}
+# import user_var_ub.csv
+user_var_ub <-
+  fread(
+    file = "~/telecom/Output/user_var_ub.csv",
+    header = TRUE,
+    verbose = FALSE
+  )
+
+user_var_ub_add <-
+  user_var_ub %>%
+  left_join(tbl_fread_var, by = c("MONTH_NO", "SERV_ID", "MSISDN"))
+```
+
+```{r echo=TRUE}
+# trim redundant space
+# mysql use "\N" as NA, replace "\N" with NA
+# some columns have empty sting, replace with NA
+user_var_ub_add <-
+  user_var_ub_add %>%
+  mutate(across(.cols = everything(), .fns = ~ str_trim(., side = "both"))) %>%
+  mutate(across(.cols = everything(), .fns = ~ na_if(., "\\N"))) %>%
+  mutate(across(.cols = everything(), .fns = ~ na_if(., "")))
+```
+
+## Check data
+
+### Balanced Panel
+
+```{r}
+glimpse(user_var_b_add)
+```
+
+```{r}
+user_var_b_add %>% head(20)
+```
+
+```{r}
+user_var_b_add %>%
+  group_by(MONTH_NO) %>%
+  summarise(count = n())
+```
+
+```{r}
+# number of row
+nrow(user_var_b_add)
+```
+
+### Unbalanced Panel
+
+```{r}
+glimpse(user_var_ub_add)
+```
+
+```{r}
+user_var_ub_add %>% head(20)
+```
+
+```{r}
+user_var_ub_add %>%
+  group_by(MONTH_NO) %>%
+  summarise(count = n())
+```
+
+```{r}
+# number of row
+nrow(user_var_ub_add)
+```
+
+## Export data
+
+```{r}
+# export unbalanced panel
+rio::export(user_var_b_add,"../Output/user_var_b_add.csv")
+# export balanced panel
+rio::export(user_var_ub_add,"../Output/user_var_ub_add.csv")
+```
